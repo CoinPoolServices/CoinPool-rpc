@@ -293,7 +293,7 @@ export default {
   },
   getInfo: {
     category: 'control',
-    version: '>=0.1.0 <0.16.0'
+    version: '>=0.1.0'
   },
   getMemoryInfo: {
     category: 'control',
@@ -548,6 +548,10 @@ export default {
       multiwallet: '>=0.17.0'
     },
     version: '>=0.17.0'
+    },
+  listRules: {
+    category: 'control',
+    version: '>=0.1.0'
   },
   listSinceBlock: {
     category: 'wallet',
