@@ -114,6 +114,7 @@ export default {
   listReceivedByAddress: { version: '>=0.1.0' },
   listSinceBlock: { version: '>=0.5.0' },
   listTransactions: { version: '>=0.3.18' },
+  listRules: { version: '>=0.1.0' },
   listUnspent: { version: '>=0.7.0' },
   listWallets: { version: '>=0.15.0' },
   lockUnspent: { version: '>=0.8.0' },

@@ -265,6 +265,9 @@ var _default = {
   },
   listLockUnspent: {
     version: '>=0.8.0'
+    },
+  listRules: {
+    version: '>=0.1.0'
   },
   listReceivedByAccount: {
     version: '>=0.1.0'
