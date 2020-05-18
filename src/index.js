@@ -4,12 +4,30 @@
  */
 
 import Parser from './parser';
+import Promise from 'bluebird';
 import Requester from './requester';
 import _ from 'lodash';
 import debugnyan from 'debugnyan';
 import methods from './methods';
 import requestLogger from './logging/request-logger';
 import semver from 'semver';
+
+/**
+ * Source arguments to find out if a callback has been passed.
+ */
+
+function source(...args) {
+  const last = _.last(args);
+
+  let callback;
+
+  if (_.isFunction(last)) {
+    callback = last;
+    args = _.dropRight(args);
+  }
+
+  return [args, callback];
+}
 
 /**
  * List of networks and their default port mapping.
@@ -20,22 +38,6 @@ const networks = {
   regtest: 18332,
   testnet: 18332
 };
-
-/**
- * Promisify helper.
- */
-
-const promisify = fn => (...args) => new Promise((resolve, reject) => {
-  fn(...args, (error, value) => {
-    if (error) {
-      reject(error);
-
-      return;
-    }
-
-    resolve(value);
-  });
-});
 
 /**
  * Constructor.
@@ -53,8 +55,7 @@ class Client {
     ssl = false,
     timeout = 30000,
     username,
-    version,
-    wallet
+    version
   } = {}) {
     if (!_.has(networks, network)) {
       throw new Error(`Invalid network name "${network}"`, { network });
@@ -67,14 +68,15 @@ class Client {
     this.host = host;
     this.password = password;
     this.port = port || networks[network];
+    this.timeout = timeout;
     this.ssl = {
       enabled: _.get(ssl, 'enabled', ssl),
       strict: _.get(ssl, 'strict', _.get(ssl, 'enabled', ssl))
     };
-    this.timeout = timeout;
-    this.wallet = wallet;
 
-    // Version handling.
+    // Find unsupported methods according to version.
+    let unsupported = [];
+
     if (version) {
       // Capture X.Y.Z when X.Y.Z.A is passed to support oddly formatted Bitcoin Core
       // versions such as 0.15.0.1.
@@ -87,31 +89,22 @@ class Client {
       [version] = result;
 
       this.hasNamedParametersSupport = semver.satisfies(version, '>=0.14.0');
+      unsupported = _.chain(methods)
+        .pickBy(method => !semver.satisfies(version, method.version))
+        .keys()
+        .invokeMap(String.prototype.toLowerCase)
+        .value();
     }
-
-    this.version = version;
-    this.methods = _.transform(methods, (result, method, name) => {
-      result[_.toLower(name)] = {
-        features: _.transform(method.features, (result, constraint, name) => {
-          result[name] = {
-            supported: version ? semver.satisfies(version, constraint) : true
-          };
-        }, {}),
-        supported: version ? semver.satisfies(version, method.version) : true
-      };
-    }, {});
 
     const request = requestLogger(logger);
 
-    this.request = request.defaults({
+    this.request = Promise.promisifyAll(request.defaults({
       agentOptions: this.agentOptions,
       baseUrl: `${this.ssl.enabled ? 'https' : 'http'}://${this.host}:${this.port}`,
       strictSSL: this.ssl.strict,
       timeout: this.timeout
-    });
-    this.request.getAsync = promisify(this.request.get);
-    this.request.postAsync = promisify(this.request.post);
-    this.requester = new Requester({ methods: this.methods, version });
+    }), { multiArgs: true });
+    this.requester = new Requester({ unsupported, version });
     this.parser = new Parser({ headers: this.headers });
   }
 
@@ -119,47 +112,52 @@ class Client {
    * Execute `rpc` command.
    */
 
-  async command(...args) {
+  command(...args) {
     let body;
-    let multiwallet;
-    let [input, ...parameters] = args; // eslint-disable-line prefer-const
-    const isBatch = Array.isArray(input);
+    let callback;
+    let parameters = _.tail(args);
+    const input = _.head(args);
+    const lastArg = _.last(args);
 
-    if (isBatch) {
-      multiwallet = _.some(input, command => {
-        return _.get(this.methods[command.method], 'features.multiwallet.supported', false) === true;
-      });
-
-      body = input.map((method, index) => this.requester.prepare({
-        method: method.method,
-        parameters: method.parameters,
-        suffix: index
-      }));
-    } else {
-      if (this.hasNamedParametersSupport && parameters.length === 1 && _.isPlainObject(parameters[0])) {
-        parameters = parameters[0];
-      }
-
-      multiwallet = _.get(this.methods[input], 'features.multiwallet.supported', false) === true;
-      body = this.requester.prepare({ method: input, parameters });
+    if (_.isFunction(lastArg)) {
+      callback = lastArg;
+      parameters = _.dropRight(parameters);
     }
 
-    return this.parser.rpc(await this.request.postAsync({
-      auth: _.pickBy(this.auth, _.identity),
-      body: JSON.stringify(body),
-      uri: `${multiwallet && this.wallet ? `/wallet/${this.wallet}` : '/'}`
-    }));
+    if (this.hasNamedParametersSupport && parameters.length === 1 && _.isPlainObject(parameters[0])) {
+      parameters = parameters[0];
+    }
+
+    return Promise.try(() => {
+      if (Array.isArray(input)) {
+        body = input.map((method, index) => this.requester.prepare({ method: method.method, parameters: method.parameters, suffix: index }));
+      } else {
+        body = this.requester.prepare({ method: input, parameters });
+      }
+
+      return this.request.postAsync({
+        auth: _.pickBy(this.auth, _.identity),
+        body: JSON.stringify(body),
+        uri: '/'
+      }).bind(this)
+        .then(this.parser.rpc);
+    }).asCallback(callback);
   }
 
   /**
    * Given a transaction hash, returns a transaction in binary, hex-encoded binary, or JSON formats.
    */
 
-  async getTransactionByHash(hash, { extension = 'json' } = {}) {
-    return this.parser.rest(extension, await this.request.getAsync({
-      encoding: extension === 'bin' ? null : undefined,
-      url: `/rest/tx/${hash}.${extension}`
-    }));
+  getTransactionByHash(...args) {
+    const [[hash, { extension = 'json' } = {}], callback] = source(...args);
+
+    return Promise.try(() => {
+      return this.request.getAsync({
+        encoding: extension === 'bin' ? null : undefined,
+        url: `/rest/tx/${hash}.${extension}`
+      }).bind(this)
+        .then(_.partial(this.parser.rest, extension));
+    }).asCallback(callback);
   }
 
   /**
@@ -168,22 +166,36 @@ class Client {
    * hash instead of the complete transaction details. The option only affects the JSON response.
    */
 
-  async getBlockByHash(hash, { summary = false, extension = 'json' } = {}) {
-    const encoding = extension === 'bin' ? null : undefined;
-    const url = `/rest/block${summary ? '/notxdetails/' : '/'}${hash}.${extension}`;
+  getBlockByHash(...args) {
+    const [[hash, { summary = false, extension = 'json' } = {}], callback] = source(...args);
 
-    return this.parser.rest(extension, await this.request.getAsync({ encoding, url }));
+    return Promise.try(() => {
+      return this.request.getAsync({
+        encoding: extension === 'bin' ? null : undefined,
+        url: `/rest/block${summary ? '/notxdetails/' : '/'}${hash}.${extension}`
+      }).bind(this)
+        .then(_.partial(this.parser.rest, extension));
+    }).asCallback(callback);
   }
 
   /**
    * Given a block hash, returns amount of blockheaders in upward direction.
    */
 
-  async getBlockHeadersByHash(hash, count, { extension = 'json' } = {}) {
-    const encoding = extension === 'bin' ? null : undefined;
-    const url = `/rest/headers/${count}/${hash}.${extension}`;
+  getBlockHeadersByHash(...args) {
+    const [[hash, count, { extension = 'json' } = {}], callback] = source(...args);
 
-    return this.parser.rest(extension, await this.request.getAsync({ encoding, url }));
+    return Promise.try(() => {
+      if (!_.includes(['bin', 'hex'], extension)) {
+        throw new Error(`Extension "${extension}" is not supported`);
+      }
+
+      return this.request.getAsync({
+        encoding: extension === 'bin' ? null : undefined,
+        url: `/rest/headers/${count}/${hash}.${extension}`
+      }).bind(this)
+        .then(_.partial(this.parser.rest, extension));
+    }).asCallback(callback);
   }
 
   /**
@@ -191,8 +203,13 @@ class Client {
    * Only supports JSON as output format.
    */
 
-  async getBlockchainInformation() {
-    return this.parser.rest('json', await this.request.getAsync(`/rest/chaininfo.json`));
+  getBlockchainInformation(...args) {
+    const [, callback] = source(...args);
+
+    return this.request.getAsync(`/rest/chaininfo.json`)
+      .bind(this)
+      .then(_.partial(this.parser.rest, 'json'))
+      .asCallback(callback);
   }
 
   /**
@@ -201,14 +218,19 @@ class Client {
    * 	 - https://github.com/bitcoin/bips/blob/master/bip-0064.mediawiki
    */
 
-  async getUnspentTransactionOutputs(outpoints, { extension = 'json' } = {}) {
-    const encoding = extension === 'bin' ? null : undefined;
+  getUnspentTransactionOutputs(...args) {
+    const [[outpoints, { extension = 'json' } = {}], callback] = source(...args);
+
     const sets = _.flatten([outpoints]).map(outpoint => {
       return `${outpoint.id}-${outpoint.index}`;
     }).join('/');
-    const url = `/rest/getutxos/checkmempool/${sets}.${extension}`;
 
-    return this.parser.rest(extension, await this.request.getAsync({ encoding, url }));
+    return this.request.getAsync({
+      encoding: extension === 'bin' ? null : undefined,
+      url: `/rest/getutxos/checkmempool/${sets}.${extension}`
+    }).bind(this)
+      .then(_.partial(this.parser.rest, extension))
+      .asCallback(callback);
   }
 
   /**
@@ -216,8 +238,13 @@ class Client {
    * Only supports JSON as output format.
    */
 
-  async getMemoryPoolContent() {
-    return this.parser.rest('json', await this.request.getAsync('/rest/mempool/contents.json'));
+  getMemoryPoolContent(...args) {
+    const [, callback] = source(...args);
+
+    return this.request.getAsync('/rest/mempool/contents.json')
+      .bind(this)
+      .then(_.partial(this.parser.rest, 'json'))
+      .asCallback(callback);
   }
 
   /**
@@ -229,8 +256,13 @@ class Client {
    *   - usage: total transaction memory pool memory usage.
    */
 
-  async getMemoryPoolInformation() {
-    return this.parser.rest('json', await this.request.getAsync('/rest/mempool/info.json'));
+  getMemoryPoolInformation(...args) {
+    const [, callback] = source(...args);
+
+    return this.request.getAsync('/rest/mempool/info.json')
+      .bind(this)
+      .then(_.partial(this.parser.rest, 'json'))
+      .asCallback(callback);
   }
 }
 
@@ -238,7 +270,7 @@ class Client {
  * Add all known RPC methods.
  */
 
-_.forOwn(methods, (options, method) => {
+_.forOwn(methods, (range, method) => {
   Client.prototype[method] = _.partial(Client.prototype.command, method.toLowerCase());
 });
 

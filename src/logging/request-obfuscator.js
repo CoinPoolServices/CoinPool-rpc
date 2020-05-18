@@ -3,7 +3,7 @@
  * Module dependencies.
  */
 
-import { assign, defaults, get, has, isArray, isEmpty, isPlainObject, isString, map, mapKeys } from 'lodash';
+import { defaults, get, has, isArray, isEmpty, isString, map, mapKeys } from 'lodash';
 import methods from '../methods';
 
 /**
@@ -35,12 +35,12 @@ function obfuscateResponse(request, instance) {
     return;
   }
 
-  if (!request.body) {
+  if (!get(request, 'response.body')) {
     return;
   }
 
-  if (get(request, `headers['content-type']`) === 'application/octet-stream') {
-    request.body = '******';
+  if (get(request, `response.headers['content-type']`) === 'application/octet-stream') {
+    request.response.body = '******';
 
     return;
   }
@@ -49,19 +49,17 @@ function obfuscateResponse(request, instance) {
     return;
   }
 
-  request.body = JSON.parse(request.body);
-
   const requestBody = JSON.parse(instance.body);
 
-  if (isArray(request.body)) {
+  if (isArray(request.response.body)) {
     const methodsById = mapKeys(requestBody, method => method.id);
 
-    request.body = map(request.body, request => obfuscateResponseBody(request, methodsById[request.id].method));
-  } else {
-    request.body = obfuscateResponseBody(request.body, requestBody.method);
+    request.response.body = map(request.response.body, request => obfuscateResponseBody(request, methodsById[request.id].method));
+
+    return;
   }
 
-  request.body = JSON.stringify(request.body);
+  request.response.body = obfuscateResponseBody(request.response.body, requestBody.method);
 }
 
 /**
@@ -75,11 +73,9 @@ function obfuscateRequestBody(body) {
     return body;
   }
 
-  if (isPlainObject(body.params)) {
-    return assign(body, { params: method.named(body.params) });
-  }
+  body.params = method(body.params);
 
-  return assign(body, { params: method.default(body.params) });
+  return body;
 }
 
 /**

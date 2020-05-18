@@ -3,15 +3,15 @@
  * Module dependencies.
  */
 
-import { get } from 'lodash';
+import { includes } from 'lodash';
 
 /**
  * Export Requester class.
  */
 
 export default class Requester {
-  constructor({ methods = {}, version } = {}) {
-    this.methods = methods;
+  constructor({ unsupported = [], version } = {}) {
+    this.unsupported = unsupported;
     this.version = version;
   }
 
@@ -22,7 +22,7 @@ export default class Requester {
   prepare({ method, parameters = [], suffix }) {
     method = method.toLowerCase();
 
-    if (this.version && !get(this.methods[method], 'supported', false)) {
+    if (this.version && includes(this.unsupported, method)) {
       throw new Error(`Method "${method}" is not supported by version "${this.version}"`);
     }
 

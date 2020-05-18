@@ -16,10 +16,10 @@ var _lodash = require("lodash");
  */
 class Requester {
   constructor({
-    methods = {},
+    unsupported = [],
     version
   } = {}) {
-    this.methods = methods;
+    this.unsupported = unsupported;
     this.version = version;
   }
   /**
@@ -34,7 +34,7 @@ class Requester {
   }) {
     method = method.toLowerCase();
 
-    if (this.version && !(0, _lodash.get)(this.methods[method], 'supported', false)) {
+    if (this.version && (0, _lodash.includes)(this.unsupported, method)) {
       throw new Error(`Method "${method}" is not supported by version "${this.version}"`);
     }
 

@@ -1,54 +1,7 @@
 # Changelog
 
-## [3.0.0](https://github.com/ruimarinho/bitcoin-core/tree/3.0.0) (2019-09-27)
-
-[Full Changelog](https://github.com/ruimarinho/bitcoin-core/compare/v2.3.0...3.0.0)
-
-**Merged pull requests:**
-
-- Remove bluebird dependency and callbacks support [\#87](https://github.com/ruimarinho/bitcoin-core/pull/87) ([pedrobranco](https://github.com/pedrobranco))
-
-## [v2.3.0](https://github.com/ruimarinho/bitcoin-core/tree/v2.3.0) (2019-09-27)
-
-[Full Changelog](https://github.com/ruimarinho/bitcoin-core/compare/v2.2.1...v2.3.0)
-
-**Merged pull requests:**
-
-- Add 'getrpcinfo' missing method for version 0.18.0 [\#100](https://github.com/ruimarinho/bitcoin-core/pull/100) ([sskender](https://github.com/sskender))
-
-## [v2.2.1](https://github.com/ruimarinho/bitcoin-core/tree/v2.2.1) (2019-09-20)
-
-[Full Changelog](https://github.com/ruimarinho/bitcoin-core/compare/v2.2.0...v2.2.1)
-
-**Merged pull requests:**
-
-- Add missing options to changelog script [\#105](https://github.com/ruimarinho/bitcoin-core/pull/105) ([pedrobranco](https://github.com/pedrobranco))
-- Add feature multiwallet to walletLock, walletPassphrase and walletPassphraseChange [\#104](https://github.com/ruimarinho/bitcoin-core/pull/104) ([patrix252](https://github.com/patrix252))
-- Fix batch example in README.md [\#96](https://github.com/ruimarinho/bitcoin-core/pull/96) ([intech](https://github.com/intech))
-
-## [v2.2.0](https://github.com/ruimarinho/bitcoin-core/tree/v2.2.0) (2019-06-28)
-
-[Full Changelog](https://github.com/ruimarinho/bitcoin-core/compare/v2.1.0...v2.2.0)
-
-**Merged pull requests:**
-
-- Add support for 0.17 methods [\#94](https://github.com/ruimarinho/bitcoin-core/pull/94) ([pedrobranco](https://github.com/pedrobranco))
-- Add new bitcoin@0.17.0 RPC methods to sign raw transactions [\#80](https://github.com/ruimarinho/bitcoin-core/pull/80) ([lautarodragan](https://github.com/lautarodragan))
-
-## [v2.1.0](https://github.com/ruimarinho/bitcoin-core/tree/v2.1.0) (2019-02-11)
-
-[Full Changelog](https://github.com/ruimarinho/bitcoin-core/compare/v2.0.0...v2.1.0)
-
-**Merged pull requests:**
-
-- Add support for json extension in rest endpoint [\#78](https://github.com/ruimarinho/bitcoin-core/pull/78) ([pedrobranco](https://github.com/pedrobranco))
-- Fix response log obfuscation [\#64](https://github.com/ruimarinho/bitcoin-core/pull/64) ([pedrobranco](https://github.com/pedrobranco))
-- Fix obfuscator with named parameters [\#62](https://github.com/ruimarinho/bitcoin-core/pull/62) ([pedrobranco](https://github.com/pedrobranco))
-- Add support for multiwallet [\#45](https://github.com/ruimarinho/bitcoin-core/pull/45) ([ruimarinho](https://github.com/ruimarinho))
-
-## [v2.0.0](https://github.com/ruimarinho/bitcoin-core/tree/v2.0.0) (2017-11-27)
-
-[Full Changelog](https://github.com/ruimarinho/bitcoin-core/compare/v1.2.0...v2.0.0)
+## [2.0.0](https://github.com/ruimarinho/bitcoin-core/tree/2.0.0) (2017-11-27)
+[Full Changelog](https://github.com/ruimarinho/bitcoin-core/compare/v1.2.0...2.0.0)
 
 **Merged pull requests:**
 
@@ -65,7 +18,6 @@
 - Add support for bignumbers [\#17](https://github.com/ruimarinho/bitcoin-core/pull/17) ([pedrobranco](https://github.com/pedrobranco))
 
 ## [v1.2.0](https://github.com/ruimarinho/bitcoin-core/tree/v1.2.0) (2017-02-12)
-
 [Full Changelog](https://github.com/ruimarinho/bitcoin-core/compare/v1.1.0...v1.2.0)
 
 **Merged pull requests:**
@@ -74,7 +26,6 @@
 - Add logging to all requests [\#19](https://github.com/ruimarinho/bitcoin-core/pull/19) ([pedrobranco](https://github.com/pedrobranco))
 
 ## [v1.1.0](https://github.com/ruimarinho/bitcoin-core/tree/v1.1.0) (2016-09-19)
-
 [Full Changelog](https://github.com/ruimarinho/bitcoin-core/compare/v1.0.0...v1.1.0)
 
 **Merged pull requests:**
@@ -85,9 +36,6 @@
 - Improve RPC documentation [\#12](https://github.com/ruimarinho/bitcoin-core/pull/12) ([ruimarinho](https://github.com/ruimarinho))
 
 ## [v1.0.0](https://github.com/ruimarinho/bitcoin-core/tree/v1.0.0) (2016-03-06)
-
-[Full Changelog](https://github.com/ruimarinho/bitcoin-core/compare/bd98d0a89faae6ddafc71cf547f387c9c74490b1...v1.0.0)
-
 **Merged pull requests:**
 
 - Add a better changelog sed [\#10](https://github.com/ruimarinho/bitcoin-core/pull/10) ([ruimarinho](https://github.com/ruimarinho))

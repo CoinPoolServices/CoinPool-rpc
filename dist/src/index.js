@@ -7,6 +7,8 @@ exports.default = void 0;
 
 var _parser = _interopRequireDefault(require("./parser"));
 
+var _bluebird = _interopRequireDefault(require("bluebird"));
+
 var _requester = _interopRequireDefault(require("./requester"));
 
 var _lodash = _interopRequireDefault(require("lodash"));
@@ -26,31 +28,33 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
  */
 
 /**
+ * Source arguments to find out if a callback has been passed.
+ */
+function source(...args) {
+  const last = _lodash.default.last(args);
+
+  let callback;
+
+  if (_lodash.default.isFunction(last)) {
+    callback = last;
+    args = _lodash.default.dropRight(args);
+  }
+
+  return [args, callback];
+}
+/**
  * List of networks and their default port mapping.
  */
+
+
 const networks = {
   mainnet: 8332,
   regtest: 18332,
   testnet: 18332
 };
 /**
- * Promisify helper.
- */
-
-const promisify = fn => (...args) => new Promise((resolve, reject) => {
-  fn(...args, (error, value) => {
-    if (error) {
-      reject(error);
-      return;
-    }
-
-    resolve(value);
-  });
-});
-/**
  * Constructor.
  */
-
 
 class Client {
   constructor({
@@ -64,8 +68,7 @@ class Client {
     ssl = false,
     timeout = 30000,
     username,
-    version,
-    wallet
+    version
   } = {}) {
     if (!_lodash.default.has(networks, network)) {
       throw new Error(`Invalid network name "${network}"`, {
@@ -83,12 +86,13 @@ class Client {
     this.host = host;
     this.password = password;
     this.port = port || networks[network];
+    this.timeout = timeout;
     this.ssl = {
       enabled: _lodash.default.get(ssl, 'enabled', ssl),
       strict: _lodash.default.get(ssl, 'strict', _lodash.default.get(ssl, 'enabled', ssl))
-    };
-    this.timeout = timeout;
-    this.wallet = wallet; // Version handling.
+    }; // Find unsupported methods according to version.
+
+    let unsupported = [];
 
     if (version) {
       // Capture X.Y.Z when X.Y.Z.A is passed to support oddly formatted Bitcoin Core
@@ -103,30 +107,20 @@ class Client {
 
       [version] = result;
       this.hasNamedParametersSupport = _semver.default.satisfies(version, '>=0.14.0');
+      unsupported = _lodash.default.chain(_methods.default).pickBy(method => !_semver.default.satisfies(version, method.version)).keys().invokeMap(String.prototype.toLowerCase).value();
     }
 
-    this.version = version;
-    this.methods = _lodash.default.transform(_methods.default, (result, method, name) => {
-      result[_lodash.default.toLower(name)] = {
-        features: _lodash.default.transform(method.features, (result, constraint, name) => {
-          result[name] = {
-            supported: version ? _semver.default.satisfies(version, constraint) : true
-          };
-        }, {}),
-        supported: version ? _semver.default.satisfies(version, method.version) : true
-      };
-    }, {});
     const request = (0, _requestLogger.default)(logger);
-    this.request = request.defaults({
+    this.request = _bluebird.default.promisifyAll(request.defaults({
       agentOptions: this.agentOptions,
       baseUrl: `${this.ssl.enabled ? 'https' : 'http'}://${this.host}:${this.port}`,
       strictSSL: this.ssl.strict,
       timeout: this.timeout
+    }), {
+      multiArgs: true
     });
-    this.request.getAsync = promisify(this.request.get);
-    this.request.postAsync = promisify(this.request.post);
     this.requester = new _requester.default({
-      methods: this.methods,
+      unsupported,
       version
     });
     this.parser = new _parser.default({
@@ -138,52 +132,61 @@ class Client {
    */
 
 
-  async command(...args) {
+  command(...args) {
     let body;
-    let multiwallet;
-    let [input, ...parameters] = args; // eslint-disable-line prefer-const
+    let callback;
 
-    const isBatch = Array.isArray(input);
+    let parameters = _lodash.default.tail(args);
 
-    if (isBatch) {
-      multiwallet = _lodash.default.some(input, command => {
-        return _lodash.default.get(this.methods[command.method], 'features.multiwallet.supported', false) === true;
-      });
-      body = input.map((method, index) => this.requester.prepare({
-        method: method.method,
-        parameters: method.parameters,
-        suffix: index
-      }));
-    } else {
-      if (this.hasNamedParametersSupport && parameters.length === 1 && _lodash.default.isPlainObject(parameters[0])) {
-        parameters = parameters[0];
-      }
+    const input = _lodash.default.head(args);
 
-      multiwallet = _lodash.default.get(this.methods[input], 'features.multiwallet.supported', false) === true;
-      body = this.requester.prepare({
-        method: input,
-        parameters
-      });
+    const lastArg = _lodash.default.last(args);
+
+    if (_lodash.default.isFunction(lastArg)) {
+      callback = lastArg;
+      parameters = _lodash.default.dropRight(parameters);
     }
 
-    return this.parser.rpc((await this.request.postAsync({
-      auth: _lodash.default.pickBy(this.auth, _lodash.default.identity),
-      body: JSON.stringify(body),
-      uri: `${multiwallet && this.wallet ? `/wallet/${this.wallet}` : '/'}`
-    })));
+    if (this.hasNamedParametersSupport && parameters.length === 1 && _lodash.default.isPlainObject(parameters[0])) {
+      parameters = parameters[0];
+    }
+
+    return _bluebird.default.try(() => {
+      if (Array.isArray(input)) {
+        body = input.map((method, index) => this.requester.prepare({
+          method: method.method,
+          parameters: method.parameters,
+          suffix: index
+        }));
+      } else {
+        body = this.requester.prepare({
+          method: input,
+          parameters
+        });
+      }
+
+      return this.request.postAsync({
+        auth: _lodash.default.pickBy(this.auth, _lodash.default.identity),
+        body: JSON.stringify(body),
+        uri: '/'
+      }).bind(this).then(this.parser.rpc);
+    }).asCallback(callback);
   }
   /**
    * Given a transaction hash, returns a transaction in binary, hex-encoded binary, or JSON formats.
    */
 
 
-  async getTransactionByHash(hash, {
-    extension = 'json'
-  } = {}) {
-    return this.parser.rest(extension, (await this.request.getAsync({
-      encoding: extension === 'bin' ? null : undefined,
-      url: `/rest/tx/${hash}.${extension}`
-    })));
+  getTransactionByHash(...args) {
+    const [[hash, {
+      extension = 'json'
+    } = {}], callback] = source(...args);
+    return _bluebird.default.try(() => {
+      return this.request.getAsync({
+        encoding: extension === 'bin' ? null : undefined,
+        url: `/rest/tx/${hash}.${extension}`
+      }).bind(this).then(_lodash.default.partial(this.parser.rest, extension));
+    }).asCallback(callback);
   }
   /**
    * Given a block hash, returns a block, in binary, hex-encoded binary or JSON formats.
@@ -192,31 +195,37 @@ class Client {
    */
 
 
-  async getBlockByHash(hash, {
-    summary = false,
-    extension = 'json'
-  } = {}) {
-    const encoding = extension === 'bin' ? null : undefined;
-    const url = `/rest/block${summary ? '/notxdetails/' : '/'}${hash}.${extension}`;
-    return this.parser.rest(extension, (await this.request.getAsync({
-      encoding,
-      url
-    })));
+  getBlockByHash(...args) {
+    const [[hash, {
+      summary = false,
+      extension = 'json'
+    } = {}], callback] = source(...args);
+    return _bluebird.default.try(() => {
+      return this.request.getAsync({
+        encoding: extension === 'bin' ? null : undefined,
+        url: `/rest/block${summary ? '/notxdetails/' : '/'}${hash}.${extension}`
+      }).bind(this).then(_lodash.default.partial(this.parser.rest, extension));
+    }).asCallback(callback);
   }
   /**
    * Given a block hash, returns amount of blockheaders in upward direction.
    */
 
 
-  async getBlockHeadersByHash(hash, count, {
-    extension = 'json'
-  } = {}) {
-    const encoding = extension === 'bin' ? null : undefined;
-    const url = `/rest/headers/${count}/${hash}.${extension}`;
-    return this.parser.rest(extension, (await this.request.getAsync({
-      encoding,
-      url
-    })));
+  getBlockHeadersByHash(...args) {
+    const [[hash, count, {
+      extension = 'json'
+    } = {}], callback] = source(...args);
+    return _bluebird.default.try(() => {
+      if (!_lodash.default.includes(['bin', 'hex'], extension)) {
+        throw new Error(`Extension "${extension}" is not supported`);
+      }
+
+      return this.request.getAsync({
+        encoding: extension === 'bin' ? null : undefined,
+        url: `/rest/headers/${count}/${hash}.${extension}`
+      }).bind(this).then(_lodash.default.partial(this.parser.rest, extension));
+    }).asCallback(callback);
   }
   /**
    * Returns various state info regarding block chain processing.
@@ -224,8 +233,9 @@ class Client {
    */
 
 
-  async getBlockchainInformation() {
-    return this.parser.rest('json', (await this.request.getAsync(`/rest/chaininfo.json`)));
+  getBlockchainInformation(...args) {
+    const [, callback] = source(...args);
+    return this.request.getAsync(`/rest/chaininfo.json`).bind(this).then(_lodash.default.partial(this.parser.rest, 'json')).asCallback(callback);
   }
   /**
    * Query unspent transaction outputs for a given set of outpoints.
@@ -234,20 +244,19 @@ class Client {
    */
 
 
-  async getUnspentTransactionOutputs(outpoints, {
-    extension = 'json'
-  } = {}) {
-    const encoding = extension === 'bin' ? null : undefined;
+  getUnspentTransactionOutputs(...args) {
+    const [[outpoints, {
+      extension = 'json'
+    } = {}], callback] = source(...args);
 
     const sets = _lodash.default.flatten([outpoints]).map(outpoint => {
       return `${outpoint.id}-${outpoint.index}`;
     }).join('/');
 
-    const url = `/rest/getutxos/checkmempool/${sets}.${extension}`;
-    return this.parser.rest(extension, (await this.request.getAsync({
-      encoding,
-      url
-    })));
+    return this.request.getAsync({
+      encoding: extension === 'bin' ? null : undefined,
+      url: `/rest/getutxos/checkmempool/${sets}.${extension}`
+    }).bind(this).then(_lodash.default.partial(this.parser.rest, extension)).asCallback(callback);
   }
   /**
    * Returns transactions in the transaction memory pool.
@@ -255,8 +264,9 @@ class Client {
    */
 
 
-  async getMemoryPoolContent() {
-    return this.parser.rest('json', (await this.request.getAsync('/rest/mempool/contents.json')));
+  getMemoryPoolContent(...args) {
+    const [, callback] = source(...args);
+    return this.request.getAsync('/rest/mempool/contents.json').bind(this).then(_lodash.default.partial(this.parser.rest, 'json')).asCallback(callback);
   }
   /**
    * Returns various information about the transaction memory pool.
@@ -268,8 +278,9 @@ class Client {
    */
 
 
-  async getMemoryPoolInformation() {
-    return this.parser.rest('json', (await this.request.getAsync('/rest/mempool/info.json')));
+  getMemoryPoolInformation(...args) {
+    const [, callback] = source(...args);
+    return this.request.getAsync('/rest/mempool/info.json').bind(this).then(_lodash.default.partial(this.parser.rest, 'json')).asCallback(callback);
   }
 
 }
@@ -278,7 +289,7 @@ class Client {
  */
 
 
-_lodash.default.forOwn(_methods.default, (options, method) => {
+_lodash.default.forOwn(_methods.default, (range, method) => {
   Client.prototype[method] = _lodash.default.partial(Client.prototype.command, method.toLowerCase());
 });
 /**
